@@ -47,11 +47,11 @@ for fname in images:
 cv2.destroyAllWindows()
 
 # Camera calibration
-ret, camera_matrix, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+ret, camera_matrix, distortion, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
 
 mean_error = 0
 for i in range(len(objpoints)):
-    imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], camera_matrix, dist)
+    imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], camera_matrix, distortion)
     error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
     mean_error += error
 
@@ -60,11 +60,11 @@ print(f"Total Reporjection error: {mean_error / len(objpoints)}")
 if ret:
     print("Camera matrix:")
     print(camera_matrix)
-    print("\nDistortion coefficients:")
-    print(dist)
+    print("\ndistortionortion coefficients:")
+    print(distortion)
 
     # Save the calibration results
-    np.savez("camera_calibration.npz", camera_matrix=camera_matrix, dist=dist, rvecs=rvecs, tvecs=tvecs)
+    np.savez("camera_calibration.npz", camera_matrix=camera_matrix, distortion=distortion)
     print("Calibration data saved to 'camera_calibration.npz'.")
 else:
     print("Camera calibration failed.")

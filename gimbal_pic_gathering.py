@@ -14,13 +14,13 @@ from siyi_sdk.siyi_sdk import SIYISDK
 from siyi_sdk.stream import SIYIRTSP
 
 
-def test(num_images):
+def get_images(num_images):
     cam = SIYISDK(server_ip="192.168.144.25", port=37260)
     if not cam.connect():
         print("No connection ")
         exit(1)
         
-    cam.requestSetAngles(0, 0)
+    cam.requestSetAngles(0, 45)
     cam_str = cam.getCameraTypeString()
     cam.disconnect()
     sleep(1)
@@ -56,4 +56,4 @@ def test(num_images):
 
     print("Got the Images")
 if __name__ == "__main__":
-    test(4)
+    get_images(1)
