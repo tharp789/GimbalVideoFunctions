@@ -64,6 +64,29 @@ class SIYIKinematics:
         ray = np.array([x, y, 1.0])
         ray = ray / np.linalg.norm(ray)
         return ray
+
+    def get_3d_location_from_pixel(self, pixel_x, pixel_y, altitude, pitch, yaw):
+        '''
+        Get the 3D location of a pixel in the world frame. 
+
+        Parameters:
+        pixel_x (int): The x pixel location of the object
+        pixel_y (int): The y pixel location of the object
+        depth (float): The depth of the object
+        camera_matrix (numpy.ndarray): The camera matrix (3,3)
+        camera_transform (numpy.ndarray): The transform from the base to the camera (4,4)
+
+        Returns:
+        numpy.ndarray: The 3D location of the object in the world frame (3,)
+        '''
+
+        cam_ray = self.get_3d_ray_from_pixel(pixel_x, pixel_y, self.calibration_matrix, self.distortion)
+        base_to_cam = self.get_camera_transform(yaw, pitch)
+        cam_to_base = np.linalg.inv(base_to_cam)
+        base_ray = np.dot(cam_to_base[:3,:3], cam_ray)
+        base_ray_angle = np.arctan2(np.sqrt(base_ray[0]**2 + base_ray[2]**2), base_ray[1])
+        location = base_ray * altitude / np.sin(base_ray_angle)
+        return location
     
 def test_math(img_path, camera_calibration_file_path, altitude, pitch, yaw, pixel_x=0, pixel_y=0):
     img = cv2.imread(img_path)
@@ -77,13 +100,7 @@ def test_math(img_path, camera_calibration_file_path, altitude, pitch, yaw, pixe
     siyi_kinematics = SIYIKinematics(camera_calibration_file_path)
     yaw = 0
     pitch = -45
-    ray = siyi_kinematics.get_3d_ray_from_pixel(pixel_x, pixel_y, siyi_kinematics.calibration_matrix, siyi_kinematics.distortion)
-    base_to_cam = siyi_kinematics.get_camera_transform(yaw, pitch)
-    print(base_to_cam)
-    cam_to_base = np.linalg.inv(base_to_cam)
-    ray = np.dot(cam_to_base[:3,:3], ray)
-    dist = np.arctan2(np.sqrt(ray[0]**2 + ray[2]**2), ray[1]) * 180 / np.pi
-    ray = ray * dist
+    ray = siyi_kinematics.get_3d_location_from_pixel(pixel_x, pixel_y, altitude, pitch, yaw)
     print(ray)
 
 if __name__ == "__main__":

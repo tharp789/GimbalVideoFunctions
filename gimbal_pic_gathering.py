@@ -55,5 +55,6 @@ def get_images(num_images):
     cap.release()
 
     print("Got the Images")
+    
 if __name__ == "__main__":
     get_images(1)
