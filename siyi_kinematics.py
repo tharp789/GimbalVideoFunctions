@@ -1,7 +1,5 @@
 import numpy as np
 import cv2
-import os
-import sys
 
 SIYI_VERTICAL_OFFSET = 0.06 #meters
 SIYI_HORIZONTAL_OFFSET = 0.01 #meters
@@ -31,9 +29,13 @@ class SIYIKinematics:
 
         # Get the rotation matrix for the gimbal
         cam_transformation = np.eye(4)
+        # yaw rotation is around the y axis
         yaw_rot = np.array([[np.cos(yaw), 0, np.sin(yaw)], [0, 1, 0], [-np.sin(yaw), 0, np.cos(yaw)]])
+        # pitch rotation is around the x axis
         pitch_rot = np.array([[1, 0, 0], [0, np.cos(pitch), -np.sin(pitch)], [0, np.sin(pitch), np.cos(pitch)]])
-        cam_rot = np.dot(pitch_rot, yaw_rot)
+
+        # rotation order is first * second * third ....
+        cam_rot = np.dot(yaw_rot, pitch_rot)
         x_offset = SIYI_HORIZONTAL_OFFSET * np.sin(yaw)
         z_offset = SIYI_HORIZONTAL_OFFSET * np.cos(yaw)
         y_offset = SIYI_VERTICAL_OFFSET
@@ -45,7 +47,7 @@ class SIYIKinematics:
 
     def get_3d_ray_from_pixel(self, pixel_x, pixel_y, camera_matrix, distortion):
         '''
-        Get the 3D location of a pixel in the camera frame. 
+        Get the 3D ray of a pixel in the camera frame. 
 
         Parameters:
         pixel_x (int): The x pixel location of the object
@@ -65,7 +67,7 @@ class SIYIKinematics:
         ray = ray / np.linalg.norm(ray)
         return ray
 
-    def get_3d_location_from_pixel(self, pixel_x, pixel_y, altitude, pitch, yaw):
+    def get_world_location_from_pixel(self, pixel_x, pixel_y, altitude, pitch, yaw):
         '''
         Get the 3D location of a pixel in the world frame. 
 
@@ -84,8 +86,9 @@ class SIYIKinematics:
         base_to_cam = self.get_camera_transform(yaw, pitch)
         cam_to_base = np.linalg.inv(base_to_cam)
         base_ray = np.dot(cam_to_base[:3,:3], cam_ray)
-        base_ray_angle = np.arctan2(np.sqrt(base_ray[0]**2 + base_ray[2]**2), base_ray[1])
-        location = base_ray * altitude / np.sin(base_ray_angle)
+        base_ray = base_ray / np.linalg.norm(base_ray)
+        ray_distance = altitude / base_ray[1]
+        location = - base_ray * ray_distance #negative to signify the object is below the camera
         return location
     
 def test_math(img_path, camera_calibration_file_path, altitude, pitch, yaw, pixel_x=0, pixel_y=0):
@@ -98,9 +101,7 @@ def test_math(img_path, camera_calibration_file_path, altitude, pitch, yaw, pixe
     cv2.waitKey()
 
     siyi_kinematics = SIYIKinematics(camera_calibration_file_path)
-    yaw = 0
-    pitch = -45
-    ray = siyi_kinematics.get_3d_location_from_pixel(pixel_x, pixel_y, altitude, pitch, yaw)
+    ray = siyi_kinematics.get_world_location_from_pixel(pixel_x, pixel_y, altitude, pitch, yaw)
     print(ray)
 
 if __name__ == "__main__":
