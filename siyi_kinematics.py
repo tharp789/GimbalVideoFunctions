@@ -34,7 +34,7 @@ class SIYIKinematics:
         # pitch rotation is around the x axis
         pitch_rot = np.array([[1, 0, 0], [0, np.cos(pitch), -np.sin(pitch)], [0, np.sin(pitch), np.cos(pitch)]])
 
-        # rotation order is first * second * third ....
+        # rotation order is first * second * third ... for local rotations
         cam_rot = np.dot(yaw_rot, pitch_rot)
         x_offset = SIYI_HORIZONTAL_OFFSET * np.sin(yaw)
         z_offset = SIYI_HORIZONTAL_OFFSET * np.cos(yaw)
