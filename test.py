@@ -4,8 +4,8 @@ import os
 import sys
 import numpy as np
 from time import sleep
-# from yolov8 import YOLO
-# import torch
+from ultralytics import YOLO
+import torch
 
 current = os.path.dirname(os.path.realpath(__file__))
 parent_directory = os.path.dirname(current)
@@ -22,38 +22,47 @@ def test_bounding_box_projection(altitude):
     if not cam.connect():
         print("No connection ")
         exit(1)
+
+    cam.requestSetAngles(0, 0)
+    sleep(0.5)
     
     model = YOLO("yolov8n.pt")
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
     rtsp_url = "rtsp://192.168.144.25:8554/main.264"
+    cap = cv2.VideoCapture(rtsp_url)
+    if not cap.isOpened():
+        print("Error: Could not open video.")
+        exit(1)
 
+    person_id = 0
     while True:
-        results = model.track(rtsp_url, verbose=False, stream=True, persist=True)
+        ret, frame = cap.read()
         yaw, pitch, _ = cam.getAttitude()
-        for result in results:
+        if not ret:
+            print("Error: Could not read frame.")
+            exit(1)
+        
+        result = model(frame, verbose=False)[0]
+        for box in result.boxes:
             # if result is a person
-            if result["label"] == "person":
+            if box.cls == person_id and box.conf > 0.5:
                 # get the bounding box
-                bounding_box = result["bounding_box"]
+                bounding_box = box.xyxy.cpu().numpy().astype(int)[0]
                 # get the pixel location of the bottom center of the bounding box
                 pixel = ((bounding_box[0] + bounding_box[2]) // 2, bounding_box[3])
                 location = siyi_kinematics.get_location_base_from_pixel(pixel[0], pixel[1], altitude, pitch=pitch, yaw=yaw)
-                # bounding_box = siyi_kinematics.get_xy_bounding_box(pixel[0], pixel[1], altitude, pitch=pitch, yaw=yaw, pixel_bounding=10)
+                break
             else:
                 location = None
 
-            # visualize the video stream with bounding box and location printed
-            if location is not None:
-                
+        # visualize the video stream with bounding box and location printed
+        if location is not None:
+            cv2.rectangle(frame, (bounding_box[0], bounding_box[1]), (bounding_box[2], bounding_box[3]), (0, 255, 0), 2)
+            cv2.putText(frame, f"Location: {location * 39.3701} in", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-            
-
-            
-                # get the altitude of the object
-
-                break
-        
+        cv2.imshow("Bounding Box", frame)
+    
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
@@ -67,7 +76,7 @@ def test_location_accuracy(target_pitch, target_yaw, altitude, expected_distance
         exit(1)
 
     cam.requestSetAngles(target_yaw, target_pitch)
-    sleep(5.0)
+    sleep(0.5)
     act_yaw, act_pitch, _ = cam.getAttitude()
     print(f"Current Gimbal State -> Yaw: {act_yaw}, Pitch: {act_pitch}")
     sleep(0.5)
@@ -124,14 +133,21 @@ def get_pixel_from_click(image):
     return points[0] if points else None
 
 if __name__ == "__main__":
-    pitch = -25
-    yaw = 15
+    # pitch = -25
+    # yaw = 15
+    # altitude_in = 33.5
+    # altitude_m = altitude_in * 0.0254
+    # expected_distance_in = 132
+    # expected_distance_m = expected_distance_in * 0.0254
+    # print("Testing location accuracy")
+    # test_location_accuracy(pitch, yaw, altitude_m, expected_distance_m)
+
     altitude_in = 33.5
     altitude_m = altitude_in * 0.0254
-    expected_distance_in = 132
-    expected_distance_m = expected_distance_in * 0.0254
-    print(f"Testing location accuracy, with altitude of {altitude_m} meters and expected distance of {expected_distance_m} meters")
-    test_location_accuracy(pitch, yaw, altitude_m, expected_distance_m)
+    print("Testing bounding box projection")
+    test_bounding_box_projection(altitude_m)
+
+
     
 
 
