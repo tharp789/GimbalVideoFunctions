@@ -20,9 +20,9 @@ def get_images(num_images):
         print("No connection ")
         exit(1)
         
-    cam.requestSetAngles(0, 45)
+    cam.requestSetAngles(0, 0)
     cam_str = cam.getCameraTypeString()
-    cam.disconnect()
+    cam.requestFocusHold()
     sleep(1)
 
     rtsp_url = "rtsp://192.168.144.25:8554/main.264"
@@ -54,7 +54,8 @@ def get_images(num_images):
         
     cap.release()
 
+    cam.disconnect()
     print("Got the Images")
     
 if __name__ == "__main__":
-    get_images(1)
+    get_images(20)

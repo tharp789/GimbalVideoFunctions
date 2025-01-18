@@ -1,8 +1,8 @@
 import numpy as np
 import cv2
 
-SIYI_VERTICAL_OFFSET = 0.06 #meters
-SIYI_HORIZONTAL_OFFSET = 0.01 #meters
+SIYI_VERTICAL_OFFSET = 0.055 #meters
+SIYI_HORIZONTAL_OFFSET = 0.010 #meters
 
 # Frame convetion is z forward, x right, y down
 
@@ -45,35 +45,46 @@ class SIYIKinematics:
 
         return cam_transformation
 
-    def get_3d_ray_from_pixel(self, pixel_x, pixel_y, camera_matrix, distortion):
+    def get_3d_ray_from_pixel(self, pixel_u, pixel_v, camera_matrix, distortion):
         '''
         Get the 3D ray of a pixel in the camera frame. 
 
         Parameters:
-        pixel_x (int): The x pixel location of the object
-        pixel_y (int): The y pixel location of the object
-        depth (float): The depth of the object
+        pixel_u (int): The x pixel location of the object
+        pixel_v (int): The y pixel location of the object
         camera_matrix (numpy.ndarray): The camera matrix (3,3)
-        camera_transform (numpy.ndarray): The transform from the base to the camera (4,4)
+        distortion (numpy.ndarray): The distortion coefficients (5,)
 
         Returns:
         numpy.ndarray: The 3D ray of the object in the camera frame (3,)
         '''
 
-        # gets ideal points in camera frame
-        undistorted_point = cv2.undistortPoints(np.array([[pixel_x, pixel_y]]).astype(np.float32), camera_matrix, distortion).squeeze()
+        # gets ideal points in camera frame from pixel location
+        undistorted_point = cv2.undistortPoints(np.array([[pixel_u, pixel_v]]).astype(np.float32), camera_matrix, distortion).squeeze()
         x, y = undistorted_point
         ray = np.array([x, y, 1.0])
         ray = ray / np.linalg.norm(ray)
         return ray
-
-    def get_world_location_from_pixel(self, pixel_x, pixel_y, altitude, pitch, yaw):
+    
+    def undistort_image(self, image):
         '''
-        Get the 3D location of a pixel in the world frame. 
+        Undistort an image using the camera calibration matrix and distortion coefficients
 
         Parameters:
-        pixel_x (int): The x pixel location of the object
-        pixel_y (int): The y pixel location of the object
+        image (numpy.ndarray): The image to undistort
+
+        Returns:
+        numpy.ndarray: The undistorted image
+        '''
+        return cv2.undistort(image, self.calibration_matrix, self.distortion)
+
+    def get_location_base_from_pixel(self, pixel_u, pixel_v, altitude, pitch, yaw):
+        '''
+        Get the 3D location of a pixel in the gimbal base frame 
+
+        Parameters:
+        pixel_u (int): The x pixel location of the object
+        pixel_v (int): The y pixel location of the object
         depth (float): The depth of the object
         camera_matrix (numpy.ndarray): The camera matrix (3,3)
         camera_transform (numpy.ndarray): The transform from the base to the camera (4,4)
@@ -82,33 +93,59 @@ class SIYIKinematics:
         numpy.ndarray: The 3D location of the object in the world frame (3,)
         '''
 
-        cam_ray = self.get_3d_ray_from_pixel(pixel_x, pixel_y, self.calibration_matrix, self.distortion)
-        base_to_cam = self.get_camera_transform(yaw, pitch)
-        cam_to_base = np.linalg.inv(base_to_cam)
-        base_ray = np.dot(cam_to_base[:3,:3], cam_ray)
-        base_ray = base_ray / np.linalg.norm(base_ray)
-        ray_distance = altitude / base_ray[1]
-        location = - base_ray * ray_distance #negative to signify the object is below the camera
-        return location
+        yaw_rad = - np.radians(yaw) # yaw is in the opposite direction as the coordinate frame
+        pitch_rad = np.radians(pitch) # pitch is in the same direction as the coordinate frame
+        base_to_cam = self.get_camera_transform(yaw_rad, pitch_rad)
+
+        # get the 3D location of the object in the camera frame
+        cam_ray = self.get_3d_ray_from_pixel(pixel_u, pixel_v, self.calibration_matrix, self.distortion)
+        # camera pitch is global (with gravity), yaw is local to camera initialization which is aligned with drone heading
+
+        # frame transform from base to cam, is the same as transform from points in cam to points in base (or vectors too)
+        # reference: http://www.cs.cmu.edu/afs/cs/academic/class/15494-s24/lectures/kinematics/jennifer-kay-kinematics-2020.pdf
+        # reference: https://www.dgp.toronto.edu/~neff/teaching/418/transformations/transformation.html
+        ray_in_base_frame_shot_from_cam = np.dot(base_to_cam[:3,:3], cam_ray)
+        camera_altitude = altitude - SIYI_VERTICAL_OFFSET
+        ray_scale = camera_altitude / ray_in_base_frame_shot_from_cam[1]
+        location_cam = ray_in_base_frame_shot_from_cam * ray_scale
+        location_base = location_cam + base_to_cam[:3,3]
+        return location_base
     
-def test_math(img_path, camera_calibration_file_path, altitude, pitch, yaw, pixel_x=0, pixel_y=0):
-    img = cv2.imread(img_path)
-    if pixel_x == 0 and pixel_y == 0:
-        pixel_x = img.shape[1] // 2
-        pixel_y = img.shape[0] // 2
-    cv2.circle(img, (pixel_x, pixel_y), 10, (0, 255, 0), 2)
-    cv2.imshow("Image", img)
-    cv2.waitKey()
+    def get_xy_bounding_box(self, pixel_u, pixel_v, altitude, pitch, yaw, pixel_bounding=1):
+        '''
+        Get the real world metric bounding box around where the target location might be
 
-    siyi_kinematics = SIYIKinematics(camera_calibration_file_path)
-    ray = siyi_kinematics.get_world_location_from_pixel(pixel_x, pixel_y, altitude, pitch, yaw)
-    print(ray)
+        Parameters:
+        pixel_u (int): The x pixel location of the object
+        pixel_v (int): The y pixel location of the object
+        altitude (float): The altitude of the camera
+        pitch (float): The pitch angle of the gimbal
+        yaw (float): The yaw angle of the gimbal
 
-if __name__ == "__main__":
-    pitch = -45
-    yaw = 0
-    altitude = 91
-    test_math("Images/image_12.jpg", "camera_calibration.npz", altitude=altitude, pitch=pitch, yaw=yaw, pixel_x=1000, pixel_y=1920//2)
+        Returns:
+        dict: The bounding box in the x and y directions
+
+        Notes:
+        Since there are more pixels on the vertical axis than the horizontal axis, the bounding box is larger in the vertical direction
+        '''
+        location = self.get_location_base_from_pixel(pixel_u, pixel_v, altitude, pitch, yaw)
+        surrounding_locations = np.zeros((4,3))
+        surrounding_locations[0] = self.get_location_base_from_pixel(pixel_u - pixel_bounding, pixel_v, altitude, pitch, yaw)
+        surrounding_locations[1] = self.get_location_base_from_pixel(pixel_u + pixel_bounding, pixel_v, altitude, pitch, yaw)
+        surrounding_locations[2] = self.get_location_base_from_pixel(pixel_u, pixel_v - pixel_bounding, altitude, pitch, yaw)
+        surrounding_locations[3] = self.get_location_base_from_pixel(pixel_u, pixel_v + pixel_bounding, altitude, pitch, yaw)
+
+        diff_locations = surrounding_locations - location
+        diff_min_x = np.min(diff_locations[:,0])
+        diff_max_x = np.max(diff_locations[:,0])
+        diff_min_z = np.min(diff_locations[:,2])
+        diff_max_z = np.max(diff_locations[:,2])
+
+        return {"min_diff_z": diff_min_z, "max_diff_z": diff_max_z, "min_diff_x": diff_min_x, "max_diff_x": diff_max_x}
+
+
+
+
         
 
 

@@ -4,7 +4,7 @@ import glob
 
 # Parameters
 CHECKERBOARD = (10, 7)  # Number of inner corners in the checkerboard
-square_size = 0.025  # Size of a square in your checkerboard pattern (e.g., in meters or millimeters)
+square_size = 0.022  # Size of a square in your checkerboard pattern (e.g., in meters or millimeters)
 image_folder = "Images"  # Replace with the path to your image folder
 
 # Termination criteria for corner subpixel refinement
