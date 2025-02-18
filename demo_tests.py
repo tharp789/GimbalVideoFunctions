@@ -1,4 +1,4 @@
-import siyi_kinematics as sk
+import projection_kinematics as pk
 import cv2
 import os
 import sys
@@ -17,7 +17,7 @@ sys.path.append(siyi_sdk_path)
 from siyi_sdk.siyi_sdk import SIYISDK
 
 def test_bounding_box_projection(altitude):
-    siyi_kinematics = sk.SIYIKinematics("camera_calibration.npz")
+    siyi_kinematics = pk.ProjectionKinematics("camera_calibration.npz")
     cam = SIYISDK(server_ip="192.168.144.25", port=37260)
     if not cam.connect():
         print("No connection ")
@@ -69,7 +69,7 @@ def test_bounding_box_projection(altitude):
     cam.disconnect()
     
 def test_location_accuracy(target_pitch, target_yaw, altitude, expected_distance):
-    siyi_kinematics = sk.SIYIKinematics("camera_calibration.npz")
+    siyi_kinematics = pk.ProjectionKinematics("camera_calibration.npz", 0, 0)
     cam = SIYISDK(server_ip="192.168.144.25", port=37260)
     if not cam.connect():
         print("No connection ")
@@ -133,19 +133,20 @@ def get_pixel_from_click(image):
     return points[0] if points else None
 
 if __name__ == "__main__":
-    # pitch = -25
-    # yaw = 15
-    # altitude_in = 33.5
-    # altitude_m = altitude_in * 0.0254
-    # expected_distance_in = 132
-    # expected_distance_m = expected_distance_in * 0.0254
-    # print("Testing location accuracy")
-    # test_location_accuracy(pitch, yaw, altitude_m, expected_distance_m)
-
+    pitch = 0
+    yaw = 0
     altitude_in = 33.5
     altitude_m = altitude_in * 0.0254
-    print("Testing bounding box projection")
-    test_bounding_box_projection(altitude_m)
+    expected_distance_in = 132
+    expected_distance_m = expected_distance_in * 0.0254
+    print("Testing location accuracy")
+    test_location_accuracy(pitch, yaw, altitude_m, expected_distance_m)
+
+    # altitude_in = 33.5
+    # # altitude_m = altitude_in * 0.0254
+    # altitude_m = 20.0
+    # print("Testing bounding box projection")
+    # test_bounding_box_projection(altitude_m)
 
 
     
