@@ -1,0 +1,19 @@
+Frame Type Percentages (%):
+  I: 1.83%
+  P: 98.17%
+  B: 0.00%
+
+Frame Type Counts:
+  I: 6
+  P: 322
+  B: 0
+
+Frame Type Frequencies (frames/sec):
+  I: 0.600
+  P: 32.200
+  B: 0.000
+
+Frame Type Periods (sec/frame):
+  I: 1.667
+  P: 0.031
+  B: 0.000

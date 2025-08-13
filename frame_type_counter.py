@@ -1,49 +1,73 @@
-import gi
-gi.require_version('Gst', '1.0')
-from gi.repository import Gst, GLib
+import av
+import time
 
-Gst.init(None)
+I_FRAME = 1
+P_FRAME = 2
+B_FRAME = 3
 
-i_frames = 0
-p_frames = 0
-b_frames = 0
+def save_results_to_file(filename, percentages, counts, freqs, periods):
+    with open(filename, 'w') as f:
+        f.write("Frame Type Percentages (%):\n")
+        for k, v in percentages.items():
+            f.write(f"  {k}: {v:.2f}%\n")
+        f.write("\nFrame Type Counts:\n")
+        for k, v in counts.items():
+            f.write(f"  {k}: {v}\n")
+        f.write("\nFrame Type Frequencies (frames/sec):\n")
+        for k, v in freqs.items():
+            f.write(f"  {k}: {v:.3f}\n")
+        f.write("\nFrame Type Periods (sec/frame):\n")
+        for k, v in periods.items():
+            f.write(f"  {k}: {v:.3f}\n")
 
-def parse_nalu_type(buffer):
-    data = buffer.extract_dup(0, buffer.get_size())
-    nalu_type = data[0] & 0x1F  # For H.264
-    return nalu_type
+def get_frame_type_percentage(rtsp_url, max_time=10):
+    container = av.open(rtsp_url)
+    stream = container.streams.video[0]
 
-def on_buffer_probe(pad, info):
-    global i_frames, p_frames, b_frames
-    buffer = info.get_buffer()
-    if not buffer:
-        return Gst.PadProbeReturn.OK
+    frame_counts = {'I': 0, 'P': 0, 'B': 0}
+    total_frames = 0
 
-    nalu_type = parse_nalu_type(buffer)
-    if nalu_type == 5:
-        i_frames += 1
-    elif nalu_type in (1, 2):
-        p_frames += 1
-    elif nalu_type in (0, 3, 4):  # rough approx for B frames; may need deeper parsing
-        b_frames += 1
+    start_time = time.time()
+    time_exceeded = False
 
-    return Gst.PadProbeReturn.OK
+    for packet in container.demux(stream):
+        for frame in packet.decode():
+            frame_type = frame.pict_type
 
-pipeline = Gst.parse_launch(
-    "filesrc location=video.mp4 ! qtdemux ! h264parse ! fakesink name=sink"
-)
+            if frame.key_frame and frame_type == I_FRAME:
+                frame_type_str = 'I'
+            elif frame_type == P_FRAME:
+                frame_type_str = 'P'
+            elif frame_type == B_FRAME:
+                frame_type_str = 'B'
+            else:
+                print(f"Unknown frame type: {frame_type}")
+                continue
 
-sink = pipeline.get_by_name("sink")
-pad = sink.get_static_pad("sink")
-pad.add_probe(Gst.PadProbeType.BUFFER, on_buffer_probe)
+            frame_counts[frame_type_str] += 1
+            total_frames += 1
 
-pipeline.set_state(Gst.State.PLAYING)
+            if time.time() - start_time > max_time:
+                time_exceeded = True
+                break 
 
-loop = GLib.MainLoop()
-try:
-    loop.run()
-except KeyboardInterrupt:
-    pipeline.set_state(Gst.State.NULL)
-    print(f"I-frames: {i_frames}")
-    print(f"P-frames: {p_frames}")
-    print(f"B-frames: {b_frames}")
+        if time_exceeded:
+            break  
+
+    percentages = {k: (v / total_frames) * 100 for k, v in frame_counts.items()} if total_frames > 0 else {}
+    frequencies = {k: (v / max_time) for k, v in frame_counts.items()} if max_time > 0 else {}
+    periods = {k: (1 / freq) if freq > 0 else 0 for k, freq in frequencies.items()}
+    container.close()
+
+    return percentages, frame_counts, frequencies, periods
+
+# Example usage
+rtsp_url = "rtsp://192.168.144.25:8554/video1"
+percentages, counts, freqs, periods = get_frame_type_percentage(rtsp_url)
+print("Frame type percentages:", percentages)
+print("Frame type counts:", counts)
+print("Frame type frequencies:", freqs)
+print("Frame type periods:", periods)
+
+save_results_to_file("frame_analysis_results.txt", percentages, counts, freqs, periods)
+
