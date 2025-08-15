@@ -3,18 +3,18 @@ import sys
 import time
 
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst, GObject
+from gi.repository import Gst, GLib
 
-# === Configuration ===
-VIDEO_SOURCE_URL = "rtsp://your-input-stream"
-VIDEO_SINK_URL = "rtsp://your-output-destination"
-SOURCE_BUFFER_MS = 200
-SINK_BUFFER_MS = 200
+# === Configuration Parameters ===
+VIDEO_SOURCE_URL = "rtsp://192.168.144.25:8554/video1"
+VIDEO_SINK_URL = "rtsp://orin-nano-10:8554/test/rgb"
+SOURCE_BUFFER_MS = 0
+SINK_BUFFER_MS = 0
 DROP_ON_LATENCY = True
 CODEC = 1  # 1 = H264, 2 = H265
-TARGET_WIDTH = 640
-TARGET_HEIGHT = 480
-TARGET_BITRATE_KBPS = 500
+TARGET_WIDTH = 1920
+TARGET_HEIGHT = 1080
+TARGET_BITRATE_KBPS = 4000
 
 # === Callbacks ===
 def on_pad_added(src, new_pad, target_element):
@@ -27,7 +27,6 @@ def on_pad_added(src, new_pad, target_element):
             print("Linked RTSP pad successfully")
 
 def bitrate_probe_callback(pad, info, user_data):
-    # Stub: You can monitor bitrate here
     return Gst.PadProbeReturn.OK
 
 def on_bus_message(bus, message):
@@ -40,7 +39,7 @@ def on_bus_message(bus, message):
         print(f"Error: {err.message}")
         loop.quit()
 
-# === Main Setup ===
+# === Main Pipeline Setup ===
 def main():
     Gst.init(None)
     pipeline = Gst.Pipeline.new("video_pipeline")
@@ -89,6 +88,7 @@ def main():
     encoder.set_property("bitrate", TARGET_BITRATE_KBPS)
     encoder.set_property("speed-preset", "ultrafast")
     encoder.set_property("tune", "zerolatency")
+    encoder.set_property("key-int-max", 30)
 
     out_parse = make("h264parse" if CODEC == 1 else "h265parse", "out_parse")
     identity = make("identity", "identity")
@@ -102,16 +102,14 @@ def main():
     videosink.set_property("tcp-timeout", 0)
 
     # Add to pipeline
-    elements = [
+    for elem in [
         rtspsrc, queue1, depay, queue2, parse, queue3, decoder, queue4,
         convert, scale, capsfilter, queue5, encoder, queue6, out_parse,
         queue7, identity, queue8, videosink
-    ]
+    ]:
+        pipeline.add(elem)
 
-    for e in elements:
-        pipeline.add(e)
-
-    # Link pipeline (manual for rtspsrc)
+    # Link elements
     rtspsrc.connect("pad-added", on_pad_added, queue1)
     queue1.link(depay)
     depay.link(queue2)
@@ -142,10 +140,10 @@ def main():
 
     try:
         global loop
-        loop = GObject.MainLoop()
+        loop = GLib.MainLoop()
         loop.run()
     except KeyboardInterrupt:
-        print("Keyboard interrupt: stopping pipeline...")
+        print("Interrupted: stopping pipeline...")
     finally:
         pipeline.set_state(Gst.State.NULL)
         print("Pipeline stopped.")

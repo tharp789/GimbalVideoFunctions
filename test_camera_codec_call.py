@@ -18,7 +18,7 @@ def test_codec_reset():
         print("No connection ")
         exit(1)
 
-    cam.sendGimbalCameraCodecSpecs(stream_type=1, video_enc_type=1, resolution_l=1920, resolution_h=1080, video_bitrate=1001)
+    cam.sendGimbalCameraCodecSpecs(stream_type=1, video_enc_type=1, resolution_l=1920, resolution_h=1080, video_bitrate=4000)
     time.sleep(0.1)
     cam.requestGimbalCameraCodecSpecs(1)
     time.sleep(0.1)
