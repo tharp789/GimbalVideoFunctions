@@ -1,0 +1,771 @@
+"""
+Python implementation of ZR10 SDK by SIYI
+ZR10 webpage: http://en.siyi.biz/en/Gimbal%20Camera/ZR10/overview/
+Author : Mohamed Abdelkader
+Email: mohamedashraf123@gmail.com
+Copyright 2022
+
+edited by RFO heavily for Secbird
+"""
+from os import stat
+from .crc16_python import crc16_str_swap
+import logging
+from .utils import toHex
+
+class FirmwareMsg:
+    seq=0
+    code_board_ver=''
+    gimbal_firmware_ver=''
+    zoom_firmware_ver=''
+
+class HardwareIDMsg:
+    # x6B: ZR10
+    # x73: A8 mini
+    # x75: A2 mini
+    # x78: ZR30
+    # x83: ZT6
+    # x7A: ZT30
+    CAM_DICT ={'6B': 'ZR10', '73': 'A8 mini', '75': 'A2 mini', '78': 'ZR30', '83': 'ZT6', '7A': 'ZT30'}
+    seq=0
+    id=''
+    cam_type_str=''
+
+class AutoFocusMsg:
+    seq=0
+    success=False
+
+class ManualZoomMsg:
+    seq=0
+    level=-1
+
+class ManualFocusMsg:
+    seq=0
+    success=False
+
+class GimbalSpeedMsg:
+    seq=0
+    success=False
+
+class CenterMsg:
+    seq=0
+    success=False
+
+class RecordingMsg:
+    seq=0
+    state=-1
+    OFF=0
+    ON=1
+    TF_EMPTY=2
+    TD_DATA_LOSS=3
+
+class MountDirMsg:
+    seq=0
+    dir=-1
+    NORMAL=0
+    UPSIDE=1
+
+class MotionModeMsg:
+    seq=0
+    mode=-1
+    LOCK=0
+    FOLLOW=1
+    FPV=2
+
+
+class FuncFeedbackInfoMsg:
+    seq=0
+    info_type=None
+    SUCCESSFUL=0
+    PHOTO_FAIL=1
+    HDR_ON=2
+    HDR_OFF=3
+    RECROD_FAIL=4
+
+class AttitdueMsg:
+    seq=    0
+    stamp=  0 # seconds
+    yaw=    0.0
+    pitch=  0.0
+    roll=   0.0
+    yaw_speed=  0.0 # deg/s
+    pitch_speed=0.0
+    roll_speed= 0.0
+
+class SetGimbalAnglesMsg:
+    seq = 0
+    yaw = 0.0
+    pitch = 0.0
+    roll = 0.0
+
+class RequestDataStreamMsg:
+    # data_type uint8_t
+    ATTITUDE_DATA = '01'
+    LASER_DATA = '02'
+
+    # Frequency
+    FREQ = {0: '00', 2: '01', 4: '02', 5: '03', 10: '04', 20: '05', 50: '06', 100: '07'}
+
+    seq = 0 
+    data_type = 1 # uint8_t
+    data_frequency = 0 # 0 means OFF (0, 2, 4, 5, 10, 20, 50, 100)
+
+class RequestAbsoluteZoomMsg:
+    seq = 0
+    success = 0
+
+class  CurrentZoomValueMsg:
+    seq = 0
+    int_part = 1
+    float_part = 0
+    level=0.0
+
+class TemperatureAtPointMsg:
+    seq = 0
+    temp = 0.0
+    x = 0.0
+    y = 0.0
+
+class GimbalCameraSoftRestartMsg:
+    seq = 0
+    camera_reboot_status = 0
+    gimbal_reboot_status = 0
+
+class RequestGimbalCameraCodecSpecsMsg:
+    seq = 0
+    req_stream_type = 0 # 0: recording stream, 1: main stream, 2: sub stream
+
+class GimbalCameraCodecSpecsMsg:
+    seq = 0
+    stream_type = 0 # 0: recording stream, 1: main stream, 2: sub stream
+    video_enc_type = 1 # 1: H.264, 2: H.265
+    resolution_l = 1920 # 1920 or 1280
+    resolution_h = 1080 # 1080 or 720
+    video_bitrate = 30 # bitrate in kbps
+
+class SendGimbalCameraCodecSpecsMsg:
+    seq = 0
+    stream_type = 0 # 0: recording stream, 1: main stream, 2: sub stream
+    video_enc_type = 1 # 1: H.264, 2: H.265
+    resolution_l = 1920 # 1920 or 1280
+    resolution_h = 1080 # 1080 or 720
+    video_bitrate = 30 # bitrate in kbps
+    reserve = 0 # 0
+
+class SendGimbalCameraCodecSpecsAckMsg:
+    seq = 0
+    stream_type = 0 # 0: recording stream, 1: main stream, 2: sub stream
+    sta = 0 # 0: success, 1: failure
+
+class RequestGimbalCameraImageModeMsg:
+    seq=0
+    vdisp_mode = 0  # Display mode:
+                    # 0: Split (Main: Zoom & Thermal, Sub: Wide)
+                    # 1: Split (Main: Wide & Thermal, Sub: Zoom) 
+                    # 2: Split (Main: Zoom & Wide, Sub: Thermal)
+                    # 3: Single (Main: Zoom, Sub: Thermal)
+                    # 4: Single (Main: Zoom, Sub: Wide)
+                    # 5: Single (Main: Wide, Sub: Thermal)
+                    # 6: Single (Main: Wide, Sub: Zoom)
+                    # 7: Single (Main: Thermal, Sub: Zoom)
+                    # 8: Single (Main: Thermal, Sub: Wide)
+    description = ""
+
+class SendGimbalCameraImageModeMsg:
+    seq = 0
+    vdisp_mode = 0  # Display mode:
+                    # 0: Split (Main: Zoom & Thermal, Sub: Wide)
+                    # 1: Split (Main: Wide & Thermal, Sub: Zoom) 
+                    # 2: Split (Main: Zoom & Wide, Sub: Thermal)
+                    # 3: Single (Main: Zoom, Sub: Thermal)
+                    # 4: Single (Main: Zoom, Sub: Wide)
+                    # 5: Single (Main: Wide, Sub: Thermal)
+                    # 6: Single (Main: Wide, Sub: Zoom)
+                    # 7: Single (Main: Thermal, Sub: Zoom)
+                    # 8: Single (Main: Thermal, Sub: Wide)\
+    description = ""
+
+class RequestThermalPaletteMsg:
+    seq = 0
+    palette = -1 # 0: White_Hot 
+                # 1: Reserved 
+                # 2: Sepia     
+                # 3: Ironbow   
+                # 4: Rainbow 
+                # 5: Night     
+                # 6: Aurora     
+                # 7: Red_Hot       
+                # 8: Jungle   
+                # 9: Medical    
+                # 10: Black_Hot 
+                # 11: Glory_Hot 
+    description = ""
+
+class SendThermalPaletteMsg:
+    seq = 0
+    palette = -1 # 0: White_Hot 
+                # 1: Reserved 
+                # 2: Sepia     
+                # 3: Ironbow   
+                # 4: Rainbow 
+                # 5: Night     
+                # 6: Aurora     
+                # 7: Red_Hot       
+                # 8: Jungle   
+                # 9: Medical    
+                # 10: Black_Hot 
+                # 11: Glory_Hot
+    description = ""
+
+class COMMAND:
+    ACQUIRE_FW_VER = '01'
+    ACQUIRE_HW_ID = '02'
+    AUTO_FOCUS = '04'
+    MANUAL_ZOOM = '05'
+    MANUAL_FOCUS = '06'
+    GIMBAL_SPEED = '07'
+    CENTER = '08'
+    ACQUIRE_GIMBAL_INFO = '0a'
+    FUNC_FEEDBACK_INFO = '0b'
+    PHOTO_VIDEO_HDR = '0c'
+    ACQUIRE_GIMBAL_ATT = '0d'
+    SET_GIMBAL_ATTITUDE = '0e'
+    SET_DATA_STREAM = '25'
+    ABSOLUTE_ZOOM = '0f'
+    CURRENT_ZOOM_VALUE = '18'
+    REQUEST_TEMPERATURE_AT_POINT = '12' # CMD_ID:0x12------Request the Temperature of a Point
+    GIMBAL_CAMERA_SOFT_RESTART = '80' # CMD_ID:0x80------Gimbal Camera Soft Restart
+    REQUEST_GIMBAL_CAMERA_CODEC_SPECS = '20' # CMD_ID:0x20------Request Gimbal Camera Codec Specs
+    SEND_CODEC_SPECS_TO_GIMBAL_CAMERA = '21' # CMD_ID:0x21------Send Codec Specs to Gimbal Camera
+    REQUEST_GIMBAL_CAMERA_IMAGE_MODE = '10' # CMD_ID:0x10------Request Gimbal Camera Image Mode
+    SEND_GIMBAL_CAMERA_IMAGE_MODE = '11' # CMD_ID:0x11------Send Gimbal Camera Image Mode
+    REQUEST_THERMAL_PALETTE = '1a' # CMD_ID:0x13------Request Thermal Palette
+    SEND_THERMAL_PALETTE = '1b' # CMD_ID:0x14------Send Thermal Palette
+#############################################
+class SIYIMESSAGE:
+    """
+    Structure of SIYI camera messages
+    """
+    def __init__(self, debug=False) -> None:
+        self._debug= debug # print debug messages
+        if self._debug:
+            d_level = logging.DEBUG
+        else:
+            d_level = logging.INFO
+        LOG_FORMAT='[%(levelname)s] %(asctime)s [SIYIMessage::%(funcName)s] :\t%(message)s'
+        logging.basicConfig(format=LOG_FORMAT, level=d_level)
+        self._logger = logging.getLogger(self.__class__.__name__)
+
+        self.HEADER='5566'# STX, 2 bytes
+        self._ctr ='01'        
+
+        self._seq= 0
+
+        self._cmd_id='00' # 1 byte
+        
+        self._data_len = 0
+        
+        # String of data byes (in hex)
+        self._data=''
+
+        self._crc16='0000' # low byte (2 characters) on the left!
+
+    
+    def incrementSEQ(self, val):
+        """
+        Increments sequence number by one, converts them to hex, and revereses the byte order.
+
+        Params
+        --
+        - val [int] Integer value , max is 65535
+
+        Returns
+        --
+        seq_str: [string] String value of the sequence number in reveresed byte order
+        """
+        
+        if not isinstance(val, int):
+            self._logger.warning("Sequence value is not integer. Returning zero")
+            return "0000"
+        if val> 65535:
+            self._logger.warning("Sequence value is greater than 65535. Resetting to zero")
+            self._seq = 0
+            return "0000"
+        if val<0:
+            self._logger.warning("Sequence value is negative. Resetting to zero")
+            return "0000"
+
+        seq = val+1
+        self._seq = seq
+
+        seq_hex = hex(seq)
+        seq_hex = seq_hex[2:] # remove '0x'
+        if len(seq_hex)==3:
+            seq_hex = '0'+seq_hex
+        elif len(seq_hex)==1:
+            seq_hex = '000'+seq_hex
+        elif len(seq_hex)==2:
+            seq_str = '00'+seq_hex
+        else:
+            seq='0000'
+        
+        low_b = seq_hex[-2:]
+        high_b = seq_hex[0:2]
+        seq_str = low_b+high_b
+
+        return seq_str
+
+    def computeDataLen(self, data):
+        """
+        Computes the data lenght (number of bytes) of data, and return a string of two bytes in reveresed order
+
+        Params
+        --
+        data [string] string of data bytes in hex
+
+        Returns
+        --
+        [string] String of two bytes (for characters), in reversed order, represents length of data in hex
+        """
+
+        if not isinstance(data, str):
+            self._logger.error("Data is not of type string")
+            return "0000"
+        # We expect number of chartacters to be even (each byte is represented by two cahrs e.g. '0A')
+        if (len(data)%2) != 0:
+            data = '0'+data # Pad 0 from the left, as sometimes it's ignored!
+        L = int(len(data)/2)
+
+        len_hex = hex(L)
+        len_hex = len_hex[2:] # remove '0x'
+        if len(len_hex)==3:
+            len_hex = '0'+len_hex
+        elif len(len_hex)==1:
+            len_hex = '000'+len_hex
+        elif len(len_hex)==2:
+            len_hex = '00'+len_hex
+        else:
+            len_hex='0000'
+        
+        low_b = len_hex[-2:]
+        high_b = len_hex[0:2]
+        len_str = low_b+high_b
+
+        return len_str
+
+    def decodeMsg(self, msg):
+        """
+        Decodes messages string, and returns the DATA bytes.
+
+        Params
+        --
+        msg: [str] full message stinf in hex
+
+        Returns
+        --
+        - data [str] string of hexadecimal of data bytes.
+        - data_len [int] Number of data bytes
+        - cmd_id [str] command ID
+        - seq [int] message sequence
+        """
+        data = None
+        
+        if not isinstance(msg, str):
+            self._logger.error("Input message is not a string")
+            return data
+
+        # 10 bytes: STX+CTRL+Data_len+SEQ+CMD_ID+CRC16
+        #            2 + 1  +    2   + 2 +   1  + 2
+        MINIMUM_DATA_LENGTH=10*2
+        if len(msg)<MINIMUM_DATA_LENGTH:
+            self._logger.error("No data to decode")
+            return data
+
+        
+        # Now we got minimum amount of data. Check if we have enough
+        # Data length, bytes are reversed, according to SIYI SDK
+        low_b = msg[6:8] # low byte
+        high_b = msg[8:10] # high byte
+        data_len = high_b+low_b
+        data_len = int('0x'+data_len, base=16)
+        char_len = data_len*2 # number of characters. Each byte is represented by two characters in hex, e.g. '0A'= 2 chars
+
+        # check crc16, if msg is OK!
+        msg_crc=msg[-4:] # last 4 characters
+        payload=msg[:-4]
+        expected_crc=crc16_str_swap(payload)
+        if expected_crc!=msg_crc:
+            self._logger.error("CRC16 is not valid. Got %s. Expected %s. Message might be corrupted!", msg_crc, expected_crc)
+            return data
+        
+        # Sequence
+        low_b = msg[10:12] # low byte
+        high_b = msg[12:14] # high byte
+        seq_hex = high_b+low_b
+        seq = int('0x'+seq_hex, base=16)
+        
+        # CMD ID
+        cmd_id = msg[14:16]
+        
+        # DATA
+        if data_len>0:
+            data = msg[16:16+char_len]
+        else:
+            data=''
+        
+        self._data = data
+        self._data_len = data_len
+        self._cmd_id = cmd_id
+
+        return data, data_len, cmd_id, seq
+
+    def encodeMsg(self, data, cmd_id):
+        """
+        Encodes a msg according to SDK protocol
+
+        Returns
+        --
+        [str] Encoded msg. Empty string if crc16 is not successful
+        """
+        seq = self.incrementSEQ(self._seq)
+        data_len = self.computeDataLen(data)
+        # msg_front = self.HEADER+self._ctr+data_len+seq+cmd_id+data
+        msg_front = self.HEADER+self._ctr+data_len+'0000'+cmd_id+data
+        crc = crc16_str_swap(msg_front)
+        if crc is not None:
+            msg = msg_front+crc
+            self._logger.debug("Encoded msg: %s", msg)
+            return msg
+        else:
+            self._logger.error("Could not encode message. crc16 is None")
+            return ''
+
+    ########################################################
+    #               Message definitions                    #
+    ########################################################
+    
+    def firmwareVerMsg(self):
+        """
+        Returns message string of the Acqsuire Firmware Version msg
+        """
+        data=""
+        cmd_id = COMMAND.ACQUIRE_FW_VER
+        return self.encodeMsg(data, cmd_id)
+    
+    def hwIdMsg(self):
+        """
+        Returns message string for the Acquire Hardware ID
+        """
+        data=""
+        cmd_id = COMMAND.ACQUIRE_HW_ID
+        return self.encodeMsg(data, cmd_id)
+
+    def gimbalInfoMsg(self):
+        """
+        Gimbal status information msg
+        """
+        data=""
+        cmd_id = COMMAND.ACQUIRE_GIMBAL_INFO
+        return self.encodeMsg(data, cmd_id)
+
+    def funcFeedbackMsg(self):
+        """
+        Function feedback information msg
+        """
+        data=""
+        cmd_id = COMMAND.FUNC_FEEDBACK_INFO
+        return self.encodeMsg(data, cmd_id)
+
+    def takePhotoMsg(self):
+        """
+        Take photo msg
+        """
+        data="00"
+        cmd_id = COMMAND.PHOTO_VIDEO_HDR
+        return self.encodeMsg(data, cmd_id)
+
+    def recordMsg(self):
+        """
+        Video Record msg
+        """
+        data="02"
+        cmd_id = COMMAND.PHOTO_VIDEO_HDR
+        return self.encodeMsg(data, cmd_id)
+
+    def autoFocusMsg(self):
+        """
+        Auto focus msg
+        """
+        data="01"
+        cmd_id = COMMAND.AUTO_FOCUS
+        return self.encodeMsg(data, cmd_id)
+
+    def centerMsg(self):
+        """
+        Center gimbal msg
+        """
+        data="01"
+        cmd_id = COMMAND.CENTER
+        return self.encodeMsg(data, cmd_id)
+
+    def lockModeMsg(self):
+        """
+        Lock mode msg
+        """
+        data="03"
+        cmd_id = COMMAND.PHOTO_VIDEO_HDR
+        return self.encodeMsg(data, cmd_id)
+
+    def followModeMsg(self):
+        """
+        Follow mode msg
+        """
+        data="04"
+        cmd_id = COMMAND.PHOTO_VIDEO_HDR
+        return self.encodeMsg(data, cmd_id)
+    
+    def fpvModeMsg(self):
+        """
+        FPV mode msg
+        """
+        data="05"
+        cmd_id = COMMAND.PHOTO_VIDEO_HDR
+        return self.encodeMsg(data, cmd_id)
+
+    def gimbalAttMsg(self):
+        """
+        Acquire Gimbal Attiude msg
+        """
+        data=""
+        cmd_id = COMMAND.ACQUIRE_GIMBAL_ATT
+        return self.encodeMsg(data, cmd_id)
+
+    def zoomInMsg(self):
+        """
+        Zoom in Msg
+        """
+        data=toHex(1,8)
+        cmd_id = COMMAND.MANUAL_ZOOM
+        return self.encodeMsg(data, cmd_id)
+
+    def zoomOutMsg(self):
+        """
+        Zoom out Msg
+        """
+        data=toHex(-1,8)
+        cmd_id = COMMAND.MANUAL_ZOOM
+        return self.encodeMsg(data, cmd_id)
+
+    def stopZoomMsg(self):
+        """
+        Stop Zoom Msg
+        """
+        data=toHex(0,8)
+        cmd_id = COMMAND.MANUAL_ZOOM
+        return self.encodeMsg(data, cmd_id)
+
+    def longFocusMsg(self):
+        """
+        Focus 1 Msg
+        """
+        data="01"
+        cmd_id = COMMAND.MANUAL_FOCUS
+        return self.encodeMsg(data, cmd_id)
+
+    def closeFocusMsg(self):
+        """
+        Focus -1 Msg
+        """
+        data="ff"
+        cmd_id = COMMAND.MANUAL_FOCUS
+        return self.encodeMsg(data, cmd_id)
+
+    def stopFocusMsg(self):
+        """
+        Focus 0 Msg
+        """
+        data="00"
+        cmd_id = COMMAND.MANUAL_FOCUS
+        return self.encodeMsg(data, cmd_id)
+
+    def gimbalSpeedMsg(self, yaw_speed, pitch_speed):
+        """
+        Gimbal rotation Msg.
+        Values -100~0~100: Negative and positive represent two directions,
+        higher or lower the number is away from 0, faster the rotation speed is.
+        Send 0 when released from control command and gimbal stops rotation.
+
+        Params
+        --
+        - yaw_speed [int] in degrees
+        - pitch_speed [int] in degrees
+        """
+        if yaw_speed>100:
+            yaw_speed=100
+        if yaw_speed<-100:
+            yaw_speed=-100
+
+        if pitch_speed>100:
+            pitch_speed=100
+        if pitch_speed<-100:
+            pitch_speed=-100
+
+        data1=toHex(yaw_speed, 8)
+        data2=toHex(pitch_speed, 8)
+        data=data1+data2
+        cmd_id = COMMAND.GIMBAL_SPEED
+        return self.encodeMsg(data, cmd_id)
+    
+    def setGimbalAttitude(self, target_yaw_deg, target_pitch_deg):
+        """
+        Set gimbal angles Msg.
+        Values are in degrees and depend on the camera specs.
+        The accuracy of the control angle is in one decimal place.
+        Eg: Set yaw as 60.5 degrees, the command number should be set as 605.
+        The actual angle data returned to be divided by 10 is the actual degree, accuracy in one decimal place.
+
+        Params
+        --
+        - target_yaw_deg [in16t] in degrees up to 1 decimal. e.g. 60.5 should 605
+        - pitch_speed [int16] in degrees up to 1 decimal
+        """
+
+        yaw_hex = toHex(target_yaw_deg, 16)
+        pitch_hex = toHex(target_pitch_deg, 16)
+        data = yaw_hex+pitch_hex
+        cmd_id = COMMAND.SET_GIMBAL_ATTITUDE
+        return self.encodeMsg(data, cmd_id)
+    
+    def dataStreamMsg(self, dtype: int, freq: int):
+        """
+        Request data stream at specific rate.
+        Supported stream are
+        Attitude and Laser. Laser only for ZT 30, but frequency is not supported yet. 
+        Frequency is supported for attitude,
+
+        Params
+        --
+        - dtype [uint8_t] 1: attitude, 2: laser
+        - freq [uint8_t] frequencey options (0: OFF, 2, 4, 5,10, 20 ,50 ,100)
+        """
+        if dtype == 1:
+            data_type_hex = RequestDataStreamMsg.ATTITUDE_DATA
+        elif dtype == 2:
+            data_type_hex = RequestDataStreamMsg.LASER_DATA
+        else:
+            self._logger.error(f"Data stream type {type} not supported. Must be 1 (atitude) or 2 (laser)")
+            return ''
+        
+        f = int(freq)
+        try:
+            f_hex = RequestDataStreamMsg.FREQ[f]
+        except Exception as e:
+            self._logger.error(f"Frequency {freq} not supported {e}. Not requesting attitude stream.")
+            return ''
+        data = data_type_hex+f_hex
+        cmd_id = COMMAND.SET_DATA_STREAM
+        return self.encodeMsg(data, cmd_id)
+    
+    def absoluteZoomMsg(self, zoom_level: float):
+        """
+        Params
+        --
+        - zoom_level [float] the integer par
+        """
+
+        # Get the integer part
+        integer_part = int(zoom_level)
+        # Get the first decimal place as an integer
+        decimal_part = int((zoom_level * 10) % 10)
+
+        d1 = toHex(integer_part, 8)
+        d2 = toHex(decimal_part, 8)
+        data = d1+d2
+        cmd_id = COMMAND.ABSOLUTE_ZOOM
+
+        return self.encodeMsg(data, cmd_id)
+    
+    def requestCurrentZoomMsg(self):
+        data=""
+        cmd_id = COMMAND.CURRENT_ZOOM_VALUE
+        return self.encodeMsg(data, cmd_id)
+    
+    def requestTemperatureAtPointMsg(self,x,y,get_temp_flag):
+        """
+        x - x coordinate of the point; uint16_t
+        y - y coordinate of the point; uint16_t
+        get_temp_flag - uint8_t based on: 
+            0: Turn off temperature measuring
+            1: Measure the temperature once
+            2: Continuous temperature measuring at 5 Hz
+        """
+        # Default to center point and single measurement
+        x_uint16 = toHex(x, 16) # Center x coordinate (32767)
+        y_uint16 = toHex(y, 16) # Center y coordinate (32767)
+        flag_uint8 = int(get_temp_flag)
+
+        data = x_uint16 + y_uint16 + toHex(flag_uint8, 8)
+        cmd_id = COMMAND.REQUEST_TEMPERATURE_AT_POINT
+        return self.encodeMsg(data, cmd_id)
+
+    def gimbalCameraSoftRestartMsg(self, camera_reboot: int, gimbal_reboot: int):
+        """
+        Gimbal Camera Soft Restart Msg
+        camera_reboot; uint8_t
+            0: No action
+            1: Camera restart
+        gimbal_reset; uint8_t
+            0: No action
+            1: Gimbal restart
+        """
+        data=toHex(camera_reboot, 8) + toHex(gimbal_reboot, 8)
+        cmd_id = COMMAND.GIMBAL_CAMERA_SOFT_RESTART
+        return self.encodeMsg(data, cmd_id)
+
+    def requestGimbalCameraCodecSpecsMsg(self, stream_type: int):
+        """
+        Request Gimbal Camera Codec Specs Msg
+        stream_type; uint8_t
+            0: recording stream
+            1: main stream
+            2: sub stream
+        """
+        data=toHex(stream_type, 8)
+        cmd_id = COMMAND.REQUEST_GIMBAL_CAMERA_CODEC_SPECS
+        return self.encodeMsg(data, cmd_id)
+    
+    def sendGimbalCameraCodecSpecsMsg(self, stream_type: int, video_enc_type: int, resolution_l: int, resolution_h: int, video_bitrate: int):
+        """
+        Send Gimbal Camera Codec Specs Msg
+        """
+        data=toHex(stream_type, 8) + toHex(video_enc_type, 8) + toHex(resolution_l, 16) + toHex(resolution_h, 16) + toHex(video_bitrate, 16) + toHex(0, 8)
+        cmd_id = COMMAND.SEND_CODEC_SPECS_TO_GIMBAL_CAMERA
+        return self.encodeMsg(data, cmd_id)
+
+    def requestGimbalCameraImageModeMsg(self):
+        data=""
+        cmd_id = COMMAND.REQUEST_GIMBAL_CAMERA_IMAGE_MODE
+        return self.encodeMsg(data, cmd_id)
+    
+    def sendGimbalCameraImageModeMsg(self, vdisp_mode: int):
+        """
+        Send Gimbal Camera Image Mode Msg
+        """
+        data=toHex(vdisp_mode, 8)
+        cmd_id = COMMAND.SEND_GIMBAL_CAMERA_IMAGE_MODE
+        return self.encodeMsg(data, cmd_id)
+    
+    def requestThermalPaletteMsg(self):
+        """
+        Request Thermal Router Msg
+        """
+        data=""
+        cmd_id = COMMAND.REQUEST_THERMAL_PALETTE
+        return self.encodeMsg(data, cmd_id)
+    
+    def sendThermalPaletteMsg(self, palette: int):
+        """
+        Send Thermal Palette Msg
+        """
+        data=toHex(palette, 8)
+        cmd_id = COMMAND.SEND_THERMAL_PALETTE
+        return self.encodeMsg(data, cmd_id)

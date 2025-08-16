@@ -10,7 +10,6 @@ sys.path.append(parent_directory)
 sys.path.append(siyi_sdk_path)
 
 from siyi_sdk.siyi_sdk import SIYISDK
-from siyi_sdk.stream import SIYIRTSP
 
 def test_codec_reset():
     cam = SIYISDK(server_ip="192.168.144.25", port=37260)
