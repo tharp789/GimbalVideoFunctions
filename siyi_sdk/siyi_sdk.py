@@ -10,12 +10,12 @@ edited by RFO heavily for Secbird
 """
 import socket
 
-from .siyi_message import *
+from siyi_message import *
 from time import sleep, time
 import logging
-from .utils import  toInt
+from utils import  toInt
 import threading
-from . import cameras
+import cameras
 import struct
 
 

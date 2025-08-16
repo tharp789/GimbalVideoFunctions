@@ -8,9 +8,9 @@ Copyright 2022
 edited by RFO heavily for Secbird
 """
 from os import stat
-from .crc16_python import crc16_str_swap
+from crc16_python import crc16_str_swap
 import logging
-from .utils import toHex
+from utils import toHex
 
 class FirmwareMsg:
     seq=0

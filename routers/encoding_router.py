@@ -1,9 +1,8 @@
 import gi
 import sys
-import time
 import threading
-import psutil
-import statistics
+
+import router_helpers as rh
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
@@ -18,45 +17,6 @@ CODEC = 1  # 1 = H264, 2 = H265
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_BITRATE_KBPS = 4000
-CPU_LOG_INTERVAL = 0.5  # seconds
-CPU_LOG_FILE = "encoding_cpu_usage.log"
-
-CODEC_NAMES = {1: "H264", 2: "H265"}
-
-from siyi_sdk.siyi_sdk import SIYISDK
-
-def get_codec():
-    cam = SIYISDK(server_ip="192.168.144.25", port=37260)
-    if not cam.connect():
-        print("No connection ")
-        exit(1)
-
-    cam.requestGimbalCameraCodecSpecs(1)
-    time.sleep(0.1)
-    results = cam.getGimbalCameraCodecSpecs()
-    print("Codec Specs:", results)
-    time.sleep(1.0)
-    cam.disconnect()
-
-    codec_type = CODEC_NAMES.get(results.get("video_enc_type", 1), "H264")
-    width = results.get("resolution_l", 1920)
-    height = results.get("resolution_h", 1080)
-    bitrate = results.get("video_bitrate", 4000)
-    return codec_type, width, height, bitrate
-
-
-# === Callbacks ===
-def on_pad_added(src, new_pad, target_element):
-    sink_pad = target_element.get_static_pad("sink")
-    if not sink_pad.is_linked():
-        result = new_pad.link(sink_pad)
-        if result != Gst.PadLinkReturn.OK:
-            print("Failed to link RTSP pad")
-        else:
-            print("Linked RTSP pad successfully")
-
-def bitrate_probe_callback(pad, info, user_data):
-    return Gst.PadProbeReturn.OK
 
 def on_bus_message(bus, message):
     t = message.type
@@ -68,46 +28,6 @@ def on_bus_message(bus, message):
         print(f"Error: {err.message}")
         loop.quit()
 
-# === CPU Logger ===
-def cpu_logger(stop_event, interval, logfile, samples):
-    process = psutil.Process()
-
-    # Create the file with placeholders for the summary + header
-    with open(logfile, "w") as f:
-        f.write("# Average CPU: 0.00%\n")
-        f.write("# Std Dev CPU: 0.00%\n\n")
-        f.write("# 100% means one full core, can go over 100%\n")
-        f.write("timestamp, cpu_percent\n")
-        f.flush()
-
-    # Now reopen in append mode for logging, but update summary separately
-    with open(logfile, "a") as f:
-        while not stop_event.is_set():
-            cpu_percent = process.cpu_percent(interval=None)
-            ts = time.time()
-            samples.append(cpu_percent)
-
-            # Write the new log line
-            line = f"{ts:.2f}, {cpu_percent:.3f}\n"
-            f.write(line)
-            f.flush()
-
-            # Compute running stats
-            avg_cpu = statistics.mean(samples)
-            std_cpu = statistics.stdev(samples) if len(samples) > 1 else 0.0
-
-            # Update top summary lines in-place
-            with open(logfile, "r+") as updater:
-                lines = updater.readlines()
-                lines[0] = f"# Average CPU: {avg_cpu:.2f}%\n"
-                lines[1] = f"# Std Dev CPU: {std_cpu:.2f}%\n"
-                updater.seek(0)
-                updater.writelines(lines)
-                updater.truncate()
-
-            stop_event.wait(interval)
-
-# === Main Pipeline Setup ===
 def main():
     Gst.init(None)
     pipeline = Gst.Pipeline.new("video_pipeline")
@@ -159,7 +79,7 @@ def main():
     out_parse = make("h264parse" if CODEC == 1 else "h265parse", "out_parse")
     identity = make("identity", "identity")
     identity.set_property("sync", True)
-    identity.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, bitrate_probe_callback, None)
+    identity.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, rh.bitrate_probe_callback, None)
 
     videosink = make("rtspclientsink", "videosink")
     videosink.set_property("location", VIDEO_SINK_URL)
@@ -174,7 +94,7 @@ def main():
         pipeline.add(elem)
 
     # Link elements
-    rtspsrc.connect("pad-added", on_pad_added, queue1)
+    rtspsrc.connect("pad-added", rh.on_pad_added, queue1)
     queue1.link(depay)
     depay.link(queue2)
     queue2.link(parse)
@@ -205,9 +125,9 @@ def main():
     # Start CPU logger thread
     stop_event = threading.Event()
     samples = []
-    codec_type, width, height, bitrate = get_codec()
+    codec_type, width, height, bitrate = rh.get_codec()
     log_file_name = f"compute_logs/simple_{codec_type.lower()}_{width}x{height}_{bitrate}_cpu_usage.log"
-    logger_thread = threading.Thread(target=cpu_logger, args=(stop_event, CPU_LOG_INTERVAL, log_file_name, samples))
+    logger_thread = threading.Thread(target=rh.cpu_logger, args=(stop_event, log_file_name, samples))
     logger_thread.start()
 
     try:
