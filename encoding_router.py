@@ -1,6 +1,9 @@
 import gi
 import sys
 import time
+import threading
+import psutil
+import statistics
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
@@ -15,6 +18,8 @@ CODEC = 1  # 1 = H264, 2 = H265
 TARGET_WIDTH = 1920
 TARGET_HEIGHT = 1080
 TARGET_BITRATE_KBPS = 4000
+CPU_LOG_INTERVAL = 0.5  # seconds
+CPU_LOG_FILE = "encoding_cpu_usage.log"
 
 # === Callbacks ===
 def on_pad_added(src, new_pad, target_element):
@@ -39,6 +44,45 @@ def on_bus_message(bus, message):
         print(f"Error: {err.message}")
         loop.quit()
 
+# === CPU Logger ===
+def cpu_logger(stop_event, interval, logfile, samples):
+    process = psutil.Process()
+
+    # Create the file with placeholders for the summary + header
+    with open(logfile, "w") as f:
+        f.write("# Average CPU: 0.00%\n")
+        f.write("# Std Dev CPU: 0.00%\n\n")
+        f.write("# 100% means one full core, can go over 100%\n")
+        f.write("timestamp, cpu_percent\n")
+        f.flush()
+
+    # Now reopen in append mode for logging, but update summary separately
+    with open(logfile, "a") as f:
+        while not stop_event.is_set():
+            cpu_percent = process.cpu_percent(interval=None)
+            ts = time.time()
+            samples.append(cpu_percent)
+
+            # Write the new log line
+            line = f"{ts:.2f}, {cpu_percent:.3f}\n"
+            f.write(line)
+            f.flush()
+
+            # Compute running stats
+            avg_cpu = statistics.mean(samples)
+            std_cpu = statistics.stdev(samples) if len(samples) > 1 else 0.0
+
+            # Update top summary lines in-place
+            with open(logfile, "r+") as updater:
+                lines = updater.readlines()
+                lines[0] = f"# Average CPU: {avg_cpu:.2f}%\n"
+                lines[1] = f"# Std Dev CPU: {std_cpu:.2f}%\n"
+                updater.seek(0)
+                updater.writelines(lines)
+                updater.truncate()
+
+            stop_event.wait(interval)
+
 # === Main Pipeline Setup ===
 def main():
     Gst.init(None)
@@ -57,9 +101,7 @@ def main():
     rtspsrc.set_property("is-live", True)
     rtspsrc.set_property("latency", SOURCE_BUFFER_MS)
     rtspsrc.set_property("drop-on-latency", DROP_ON_LATENCY)
-    rtspsrc.set_property("udp-buffer-size", 212992)
-    rtspsrc.set_property("timeout", 0)
-    rtspsrc.set_property("tcp-timeout", 0)
+    rtspsrc.set_property("protocols", "tcp")
 
     queue1 = make("queue", "queue1")
     queue2 = make("queue", "queue2")
@@ -98,8 +140,6 @@ def main():
     videosink = make("rtspclientsink", "videosink")
     videosink.set_property("location", VIDEO_SINK_URL)
     videosink.set_property("latency", SINK_BUFFER_MS)
-    videosink.set_property("timeout", 0)
-    videosink.set_property("tcp-timeout", 0)
 
     # Add to pipeline
     for elem in [
@@ -138,6 +178,12 @@ def main():
     print("Starting pipeline...")
     pipeline.set_state(Gst.State.PLAYING)
 
+    # Start CPU logger thread
+    stop_event = threading.Event()
+    samples = []
+    logger_thread = threading.Thread(target=cpu_logger, args=(stop_event, CPU_LOG_INTERVAL, CPU_LOG_FILE, samples))
+    logger_thread.start()
+
     try:
         global loop
         loop = GLib.MainLoop()
@@ -145,8 +191,10 @@ def main():
     except KeyboardInterrupt:
         print("Interrupted: stopping pipeline...")
     finally:
+        stop_event.set()
+        logger_thread.join()
         pipeline.set_state(Gst.State.NULL)
         print("Pipeline stopped.")
-
+        
 if __name__ == "__main__":
     main()
