@@ -1,0 +1,9 @@
+# Average CPU: 1.00%
+# Std Dev CPU: 1.15%
+
+# 100% means one full core, can go over 100%
+timestamp, cpu_percent
+1755378936.70, 0.000
+1755378937.20, 2.000
+1755378937.70, 2.000
+1755378938.20, 0.000

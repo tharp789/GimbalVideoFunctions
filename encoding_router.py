@@ -21,6 +21,30 @@ TARGET_BITRATE_KBPS = 4000
 CPU_LOG_INTERVAL = 0.5  # seconds
 CPU_LOG_FILE = "encoding_cpu_usage.log"
 
+CODEC_NAMES = {1: "H264", 2: "H265"}
+
+from siyi_sdk.siyi_sdk import SIYISDK
+
+def get_codec():
+    cam = SIYISDK(server_ip="192.168.144.25", port=37260)
+    if not cam.connect():
+        print("No connection ")
+        exit(1)
+
+    cam.requestGimbalCameraCodecSpecs(1)
+    time.sleep(0.1)
+    results = cam.getGimbalCameraCodecSpecs()
+    print("Codec Specs:", results)
+    time.sleep(1.0)
+    cam.disconnect()
+
+    codec_type = CODEC_NAMES.get(results.get("video_enc_type", 1), "H264")
+    width = results.get("resolution_l", 1920)
+    height = results.get("resolution_h", 1080)
+    bitrate = results.get("video_bitrate", 4000)
+    return codec_type, width, height, bitrate
+
+
 # === Callbacks ===
 def on_pad_added(src, new_pad, target_element):
     sink_pad = target_element.get_static_pad("sink")
@@ -181,7 +205,9 @@ def main():
     # Start CPU logger thread
     stop_event = threading.Event()
     samples = []
-    logger_thread = threading.Thread(target=cpu_logger, args=(stop_event, CPU_LOG_INTERVAL, CPU_LOG_FILE, samples))
+    codec_type, width, height, bitrate = get_codec()
+    log_file_name = f"compute_logs/simple_{codec_type.lower()}_{width}x{height}_{bitrate}_cpu_usage.log"
+    logger_thread = threading.Thread(target=cpu_logger, args=(stop_event, CPU_LOG_INTERVAL, log_file_name, samples))
     logger_thread.start()
 
     try:
