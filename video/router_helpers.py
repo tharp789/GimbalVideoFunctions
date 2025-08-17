@@ -7,7 +7,7 @@ import os
 
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'siyi_sdk'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..','gimbal', 'siyi_sdk'))
 
 CPU_LOG_INTERVAL = 0.5 # secondsimport sys
 
