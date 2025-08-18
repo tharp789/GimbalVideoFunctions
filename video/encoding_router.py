@@ -9,14 +9,14 @@ from gi.repository import Gst, GLib
 
 # === Configuration Parameters ===
 VIDEO_SOURCE_URL = "rtsp://192.168.144.25:8554/video1"
-VIDEO_SINK_URL = "rtsp://orin-nano-10:8554/test/rgb"
+VIDEO_SINK_URL = "rtsp://172.26.108.90:8554/test/rgb"
 SOURCE_BUFFER_MS = 0
 SINK_BUFFER_MS = 0
 DROP_ON_LATENCY = True
 CODEC = 1  # 1 = H264, 2 = H265
-TARGET_WIDTH = 1920
-TARGET_HEIGHT = 1080
-TARGET_BITRATE_KBPS = 4000
+TARGET_WIDTH = 640
+TARGET_HEIGHT = 360
+TARGET_BITRATE_KBPS = 1001
 
 def on_bus_message(bus, message):
     t = message.type
@@ -126,7 +126,7 @@ def main():
     stop_event = threading.Event()
     samples = []
     codec_type, width, height, bitrate = rh.get_codec()
-    log_file_name = f"compute_logs/simple_{codec_type.lower()}_{width}x{height}_{bitrate}_cpu_usage.log"
+    log_file_name = f"compute_logs/encoding_{codec_type.lower()}_{width}x{height}_{bitrate}_to_{TARGET_WIDTH}x{TARGET_HEIGHT}_{TARGET_BITRATE_KBPS}_cpu_usage.log"
     logger_thread = threading.Thread(target=rh.cpu_logger, args=(stop_event, log_file_name, samples))
     logger_thread.start()
 

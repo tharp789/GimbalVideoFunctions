@@ -9,7 +9,7 @@ from gi.repository import Gst, GLib
 
 # === Configuration Parameters ===
 VIDEO_SOURCE_URL = "rtsp://192.168.144.25:8554/video1"
-VIDEO_SINK_URL = "rtsp://orin-nano-10:8554/test/rgb"
+VIDEO_SINK_URL = "rtsp://172.26.108.90:8554/test/rgb"
 SOURCE_BUFFER_MS = 0
 SINK_BUFFER_MS = 0
 DROP_ON_LATENCY = True
@@ -93,6 +93,7 @@ def main():
     stop_event = threading.Event()
     samples = []
     codec_type, width, height, bitrate = rh.get_codec()
+    print(f"Got {codec_type} codec with resolution {width}x{height} and bitrate {bitrate}")
     log_file_name = f"compute_logs/simple_{codec_type.lower()}_{width}x{height}_{bitrate}_cpu_usage.log"
     logger_thread = threading.Thread(target=rh.cpu_logger, args=(stop_event, log_file_name, samples))
     logger_thread.start()

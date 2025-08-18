@@ -7,10 +7,18 @@ Copyright 2022
 
 edited by RFO heavily for Secbird
 """
-from os import stat
+import os
+import sys
+current = os.path.dirname(os.path.realpath(__file__))
+parent_directory = os.path.dirname(current)
+siyi_sdk_path = os.path.join(parent_directory, "siyi_sdk")
+sys.path.append(parent_directory)
+sys.path.append(siyi_sdk_path)
+
 from crc16_python import crc16_str_swap
 import logging
 from utils import toHex
+
 
 class FirmwareMsg:
     seq=0

@@ -8,7 +8,15 @@ Copyright 2022
 edited by RFO heavily for Secbird
 
 """
+
 import socket
+import sys
+import os
+current = os.path.dirname(os.path.realpath(__file__))
+parent_directory = os.path.dirname(current)
+siyi_sdk_path = os.path.join(parent_directory, "siyi_sdk")
+sys.path.append(parent_directory)
+sys.path.append(siyi_sdk_path)
 
 from siyi_message import *
 from time import sleep, time
