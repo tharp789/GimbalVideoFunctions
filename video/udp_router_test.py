@@ -9,14 +9,14 @@ from gi.repository import Gst, GLib
 
 # === Configuration Parameters ===
 VIDEO_SOURCE_URL = "rtsp://192.168.144.25:8554/video1"
-VIDEO_SINK_URL = "rtsp://172.26.108.90:8554/test/rgb"
+VIDEO_SINK_URL = "rtsp://orin-nano-10:8554/test/rgb"
 SOURCE_BUFFER_MS = 0
 SINK_BUFFER_MS = 0
 DROP_ON_LATENCY = True
 CODEC = 1  # 1 = H264, 2 = H265
-TARGET_WIDTH = 640
-TARGET_HEIGHT = 360
-TARGET_BITRATE_KBPS = 1001
+TARGET_WIDTH = 1920
+TARGET_HEIGHT = 1080
+TARGET_BITRATE_KBPS = 4000
 
 def on_bus_message(bus, message):
     t = message.type
@@ -81,15 +81,21 @@ def main():
     identity.set_property("sync", True)
     identity.get_static_pad("sink").add_probe(Gst.PadProbeType.BUFFER, rh.bitrate_probe_callback, None)
 
-    videosink = make("rtspclientsink", "videosink")
-    videosink.set_property("location", VIDEO_SINK_URL)
-    videosink.set_property("latency", SINK_BUFFER_MS)
+    # videosink = make("rtspclientsink", "videosink")
+    # videosink.set_property("location", VIDEO_SINK_URL)
+    # videosink.set_property("latency", SINK_BUFFER_MS)
+    rtphpayload = make("rtph264pay" if CODEC == 1 else "rtph265pay", "rtph264pay")
+    rtphpayload.set_property("config-interval", 1)
+
+    videosink = make("udpsink", "videosink")
+    videosink.set_property("host", "orin-nano-10")
+    videosink.set_property("port", 8000)
 
     # Add to pipeline
     for elem in [
         rtspsrc, queue1, depay, queue2, parse, queue3, decoder, queue4,
         convert, scale, capsfilter, queue5, encoder, queue6, out_parse,
-        queue7, identity, queue8, videosink]:
+        queue7, identity, queue8, rtphpayload, videosink]:
         pipeline.add(elem)
 
     # Link elements
@@ -110,7 +116,8 @@ def main():
     out_parse.link(queue7)
     queue7.link(identity)
     identity.link(queue8)
-    queue8.link(videosink)
+    queue8.link(rtphpayload)
+    rtphpayload.link(videosink)
 
     # Bus
     bus = pipeline.get_bus()
@@ -125,7 +132,7 @@ def main():
     stop_event = threading.Event()
     samples = []
     codec_type, width, height, bitrate = rh.get_codec()
-    log_file_name = f"compute_logs/encoding_{codec_type.lower()}_{width}x{height}_{bitrate}_to_{TARGET_WIDTH}x{TARGET_HEIGHT}_{TARGET_BITRATE_KBPS}_cpu_usage.log"
+    log_file_name = f"compute_logs/simple_{codec_type.lower()}_{width}x{height}_{bitrate}_cpu_usage.log"
     logger_thread = threading.Thread(target=rh.cpu_logger, args=(stop_event, log_file_name, samples))
     logger_thread.start()
 
